@@ -33,6 +33,9 @@
   UIViewController *destination = navigation.viewControllers[navigation.viewControllers.count - 2];
   if ([navigation shouldPreventNativePopToController:destination])
     return NO;
+  // Without UIKit's event hook (see respondsToSelector:), refuse a swipe mid-transition here.
+  if (navigation.navigationBarHidden && navigation.transitionCoordinator != nil)
+    return NO;
   if ([self.originalDelegate respondsToSelector:_cmd]) {
     return [self.originalDelegate gestureRecognizerShouldBegin:gestureRecognizer];
   }
@@ -41,6 +44,12 @@
 
 - (BOOL)respondsToSelector:(SEL)selector
 {
+  // UIKit's private event hook drops every touch while the bar is hidden, before
+  // gestureRecognizerShouldBegin: is asked. UIKit reads this when the delegate is set,
+  // so the controller re-attaches its delegates when the bar's hidden state changes.
+  if (self.navigationController.navigationBarHidden &&
+      [NSStringFromSelector(selector) isEqualToString:@"_gestureRecognizer:shouldReceiveEvent:"])
+    return NO;
   return [super respondsToSelector:selector] || [self.originalDelegate respondsToSelector:selector];
 }
 
@@ -103,6 +112,23 @@
 }
 
 #if !TARGET_OS_TV
+- (void)setNavigationBarHidden:(BOOL)hidden animated:(BOOL)animated
+{
+  BOOL changed = hidden != self.navigationBarHidden;
+  [super setNavigationBarHidden:hidden animated:animated];
+  if (!changed || _edgePopDelegate == nil)
+    return;
+  // Re-attaching makes UIKit read the delegates' respondsToSelector: again.
+  self.interactivePopGestureRecognizer.delegate = nil;
+  self.interactivePopGestureRecognizer.delegate = _edgePopDelegate;
+#if RNS_IPHONE_OS_VERSION_AVAILABLE(26_0)
+  if (@available(iOS 26.0, *)) {
+    self.interactiveContentPopGestureRecognizer.delegate = nil;
+    self.interactiveContentPopGestureRecognizer.delegate = _contentPopDelegate;
+  }
+#endif
+}
+
 - (void)cancelReactTouchesForPopGesture:(UIGestureRecognizer *)gestureRecognizer
 {
   if (gestureRecognizer.state != UIGestureRecognizerStateBegan)

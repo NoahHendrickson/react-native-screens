@@ -30,11 +30,12 @@
   RNSStackNavigationController *navigation = self.navigationController;
   if (navigation.viewControllers.count < 2)
     return NO;
+  // Without UIKit's event hook (see respondsToSelector:), refuse a swipe mid-transition here,
+  // before the guard below emits a dismiss-prevented event.
+  if (navigation.navigationBarHidden && navigation.transitionCoordinator != nil)
+    return NO;
   UIViewController *destination = navigation.viewControllers[navigation.viewControllers.count - 2];
   if ([navigation shouldPreventNativePopToController:destination])
-    return NO;
-  // Without UIKit's event hook (see respondsToSelector:), refuse a swipe mid-transition here.
-  if (navigation.navigationBarHidden && navigation.transitionCoordinator != nil)
     return NO;
   if ([self.originalDelegate respondsToSelector:_cmd]) {
     return [self.originalDelegate gestureRecognizerShouldBegin:gestureRecognizer];
